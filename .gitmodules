@@ -1,0 +1,3 @@
+[submodule "acousynth/libs/CMSIS-DSP"]
+	path = acousynth/libs/CMSIS-DSP
+	url = https://github.com/ARM-software/CMSIS-DSP.git

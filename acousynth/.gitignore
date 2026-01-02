@@ -1,0 +1,21 @@
+# Ignore C++ build artifacts (compiled code)
+build/
+bin/
+*.exe
+*.o
+*.obj
+*.dll
+*.dylib
+
+# Ignore VS Code local settings
+.vscode/
+
+# Ignore Audio files (too large for Git)
+*.wav
+*.mp3
+*.flac
+*.raw
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
