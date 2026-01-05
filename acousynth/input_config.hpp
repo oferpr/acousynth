@@ -28,6 +28,7 @@ typedef struct FreqData{
     uint32_t accumalated_phase; // Current phase for the DDS oscillator
     uint32_t increment_j;       // Phase increment per sample, based on freq
     int16_t amp;                // Amplitude for DDS (Q15 format: 0-32767)
+    float current_amp;              // Current amplitude (smoothed) value for synthesis
 
     // --- Analysis State Fields ---
     float amp_float;            // Previous frame's amp (normalized 0.0-1.0)

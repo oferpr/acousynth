@@ -21,14 +21,18 @@ void inject_test_tone(int16_t* buffer, float freq, float sample_rate) {
         if (phase > 2.0f * M_PI) phase -= 2.0f * M_PI;
     }
 }
+//---PARAMETERS---
+float Kp = 0.002f;
 
+// --- MAIN ---
 int main() {
     stdio_init_all();
     sleep_ms(2000);
     printf("=== Acousynth Live ===\n");
     
     init_wavetables();
-    set_synth_table(sine_wave, 1.0, saw_wave, 0.0, square_wave, 0.0);
+    //set_synth_table(sine_wave, 1.0, saw_wave, 0.0, square_wave, 0.0);
+    set_synth_table();
     increment_init();
     analysis_init();
     
@@ -52,7 +56,7 @@ int main() {
     // This prevents the I2S engine from starving/crashing immediately.
     printf("[System] Priming Audio Buffers...\n");
     for (int i = 0; i < 4; i++) {
-        fetch_o_samples();
+        fetch_o_samples(Kp);
     }
 
     // 4. STARTUP SEQUENCE (Strict Order)
@@ -74,7 +78,7 @@ int main() {
     //uint32_t last_pitch_time = 0;
     
     while (true) {
-        fetch_o_samples();
+        fetch_o_samples(Kp); //Kp = 1/(FS_O * tau), where tau is the time constant of acheiving the target amp (P-Controller)
 
         // Blink LED every 500ms to prove the loop is running
         uint32_t now = to_ms_since_boot(get_absolute_time());

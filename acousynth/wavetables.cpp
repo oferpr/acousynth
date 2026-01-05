@@ -10,31 +10,35 @@ WaveTable *square_wave;
 WaveTable *triangle_wave;
 WaveTable *synth_wave;
 
+// 1. STATIC ALLOCATION: Defines the actual memory here.
+int16_t SINE_TABLE[WAVETABLE_LEN];
+int16_t *current_wave_table = SINE_TABLE; //points to static array
+
 void init_wavetables() {
     printf("[Output] Generating Wavetables...\n");
-    sine_wave = new WaveTable();
-    saw_wave = new WaveTable();
-    square_wave = new WaveTable();
-    triangle_wave = new WaveTable();
-    sine_wave->wave = SINE;
-    saw_wave->wave = SAW;
-    square_wave->wave = SQUARE;
-    triangle_wave->wave = TRIANGLE;
 
     for (int i = 0; i < WAVETABLE_LEN; i++) {
-        // Sine wave
-        sine_wave->table[i] = (int16_t)(sin((TWO_PI * i / WAVETABLE_LEN)) * INT16_MAX);
+        // Generate Sine Math
+        float v = sin((TWO_PI * i / WAVETABLE_LEN));
+        SINE_TABLE[i] = (int16_t)(v * 32767.0f);
         // Sawtooth wave
-        saw_wave->table[i] = (int16_t)((1 - 2 * ((float)i / WAVETABLE_LEN)) * INT16_MAX); //Ramp from 1 to -1
+        //saw_wave->table[i] = (int16_t)((1 - 2 * ((float)i / WAVETABLE_LEN)) * INT16_MAX); //Ramp from 1 to -1
         // Square wave
-        square_wave->table[i] = (i < WAVETABLE_LEN / 2) ? INT16_MAX : INT16_MIN; //True->1, False->-1
+        //square_wave->table[i] = (i < WAVETABLE_LEN / 2) ? INT16_MAX : INT16_MIN; //True->1, False->-1
         // Triangle wave
-        float phase = (float)i / WAVETABLE_LEN;
-        triangle_wave->table[i] = (int16_t)((2.0f * fabs(2.0f * (phase - 0.5f)) - 1.0f) * INT16_MAX); //Triangle wave: 2.0 * abs(2.0 * (phase - 0.5)) - 1.0
+        //float phase = (float)i / WAVETABLE_LEN;
+        //triangle_wave->table[i] = (int16_t)((2.0f * fabs(2.0f * (phase - 0.5f)) - 1.0f) * INT16_MAX); //Triangle wave: 2.0 * abs(2.0 * (phase - 0.5)) - 1.0
     }
-    synth_wave = sine_wave; //default
+    current_wave_table = SINE_TABLE;
 }
 
+
+// Simple switcher (No mixing for now - let's get Sine working first)
+void set_synth_table() {
+    // For now, just enforce Sine to debug the distortion
+    current_wave_table = SINE_TABLE;
+}
+/*
 //[ms]. LATER - READ KNOBS DATA
 // Mixes 3 waves into the 'synth_wave' table
 void set_synth_table(WaveTable *wave1, float vol1, WaveTable *wave2, float vol2, WaveTable *wave3, float vol3) {
@@ -53,6 +57,7 @@ void set_synth_table(WaveTable *wave1, float vol1, WaveTable *wave2, float vol2,
         synth_wave->table[i] = (int16_t)mixed_val;
     }
 }
+*/
 /*
 void set_synth_table(WaveTable *wave1, float vol1, WaveTable *wave2, float vol2, WaveTable *wave3, float vol3) {
     synth_wave = new WaveTable();

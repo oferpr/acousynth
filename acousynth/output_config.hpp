@@ -31,7 +31,7 @@ extern audio_buffer_pool_t *output_pool;
 void increment_init();
 void set_i2s();
 void connect_o_buffers();
-void fill_o_buffer(audio_buffer_t *buffer);
-void fetch_o_samples();
+void fill_o_buffer(audio_buffer_t *buffer, float Kp);
+void fetch_o_samples(float Kp);
 
 #endif // OUTPUT_CONFIG_H

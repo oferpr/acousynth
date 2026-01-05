@@ -138,11 +138,22 @@ void analyze_audio_segment(int16_t* new_samples) {
             
             if (current_freq->stability > STABILITY_COUNT) {
                 current_freq->play = true;
-                // Set the amplitude for the synthesizer (convert 0.0-1.0 to Q15)
-                // Boost amp
-                float boosted_amp = new_amp * AMP_CORRECTION_FACTOR;
-                if (boosted_amp > 1.0f) boosted_amp = 1.0f;
-                current_freq->amp = (int16_t)(boosted_amp * 32767.0f);
+                // --- RAW VALUE ---
+             float raw_amp = current_amps[k];
+
+             // --- JITTER FILTER ---
+             // Instead of using raw_amp directly, average it with the previous frame.
+             // This stops the target from bouncing around wildly.
+             float smoothed_target = (raw_amp * 0.5f) + (current_freq->amp_float * 0.5f);
+             
+             // Update the 'float' history with this smoothed version
+             current_freq->amp_float = smoothed_target;
+
+             // Apply boost and set int16 target
+             float boosted_amp = smoothed_target * AMP_CORRECTION_FACTOR;
+             if (boosted_amp > 1.0f) boosted_amp = 1.0f;
+             
+             current_freq->amp = (int16_t)(boosted_amp * 32767.0f);
             }
         } else {
             current_freq->env_phase = 0; // 0 for "None"
