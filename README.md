@@ -44,11 +44,6 @@ To interface the high-impedance Piezo sensors with the RP2040's 12-bit ADC, I de
 
 ---
 
-## Performance & Challenges
-* **Latency:** Achieved <10ms round-trip latency, critical for maintaining "musical" feedback.
-* **Memory Management:** Strictly avoided dynamic allocation (`malloc`/`new`) in the audio path to prevent heap fragmentation and non-deterministic timing.
-* **Fixed-Point Arithmetic:** Optimized mixing routines to use bit-shifting (`>> 15`) instead of floating-point division where possible.
-
 ## Build Instructions
 Requires the [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk).
 ```bash
