@@ -1,29 +1,35 @@
+/**
+ * File: analysis.hpp
+ * Description: Spectral analysis module using KissFFT.
+ * Performs STFT (Short-Time Fourier Transform), peak detection, 
+ * and envelope following to drive the synthesizer.
+ */
+
 #ifndef ANALYSIS_H
 #define ANALYSIS_H
+
 #include "input_config.hpp"
 #include <stdint.h>
 
-#define AMP_CORRECTION_FACTOR 1.0f
+// Adjust this to boost quiet signals from the guitar
+#define AMP_CORRECTION_FACTOR 1.5f 
 
 /**
- *  Initializes the FFT, Hanning window, and processing buffers.
+ * @brief Initializes the FFT engine, Hanning window, and buffers.
+ * Must be called before the main loop.
  */
 void analysis_init();
 
 /**
- * Processes a new buffer of audio samples.
- * This performs the full STFT pipeline:
- * 1. Shifts the internal processing buffer
- * 2. Adds the new normalized samples
- * 3. Applies a Hanning window
- * 4. Runs the FFT
- * 5. Analyzes peaks, stability, and envelope
- * 6. Updates the global `frq_array` with .play and .amp values.
- *
- *  Pointer to the newly filled DMA buffer (size: HOP_SIZE).
+ * @brief Processes a new buffer of audio samples.
+ * Pipeline:
+ * 1. Overlap-Add (Sliding Window)
+ * 2. Windowing (Hanning)
+ * 3. FFT (Real-to-Complex)
+ * 4. Peak Detection & Stability Check
+ * 5. Parameter Mapping (Updates global frq_array)
+ * * @param new_samples Pointer to the DMA buffer (size: HOP_SIZE)
  */
 void analyze_audio_segment(int16_t* new_samples);
-
-
 
 #endif // ANALYSIS_H

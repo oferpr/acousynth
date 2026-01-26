@@ -1,5 +1,5 @@
 /**
- * Project: Acousynth Live (RP2040 Real-Time Electro-Acoustic Synth)
+ * Project: Acousynth Live (RP2040 Real-Time Electro-Acoustic Synth - Acoustic Guitar Version)
  * File: main.cpp
  * Author: Ofer Pressman
  * Description: 
@@ -39,7 +39,7 @@ int main() {
     
     // Initialize Subsystems
     init_wavetables();
-    set_synth_table(); // Loads default sine/saw/square tables
+    set_synth_table(0.5f, 0.5f, 0.0f, 0.0f);; // Weights for: Sine, Saw, Square, Triangle
     increment_init();
     analysis_init();
     

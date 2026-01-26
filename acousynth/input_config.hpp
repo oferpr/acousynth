@@ -1,4 +1,8 @@
-// input.h
+/**
+ * File: input_config.hpp
+ * Description: ADC & DMA Driver Configuration.
+ * Manages the high-speed data acquisition pipeline using Double Buffering.
+ */
 
 #ifndef INPUT_H
 #define INPUT_H
@@ -11,8 +15,11 @@
 #include "hardware/adc.h"
 #include "hardware/irq.h"
 
-#define INPUT_PIN 26
-#define ADC_INPUT 0
+// --- Hardware Pins ---
+constexpr uint INPUT_PIN = 26;
+constexpr uint ADC_INPUT = 0; // Maps to GPIO 26
+
+// --- Data Structures ---
 
 typedef enum {
     ATTACK = 1,
@@ -20,39 +27,39 @@ typedef enum {
     RELEASE = -1
 } Env_Phase;
 
-// --- Frequency Data Structure ---
-// Holds the state for a single frequency bin.
+// Shared State for Synthesis & Analysis
 typedef struct FreqData{
-    // --- Synthesis (DDS) Fields ---
-    bool play;                  // True if this freq should be synthesized
-    uint32_t accumalated_phase; // Current phase for the DDS oscillator
-    uint32_t increment_j;       // Phase increment per sample, based on freq
-    int16_t amp;                // Amplitude for DDS (Q15 format: 0-32767)
-    float current_amp;              // Current amplitude (smoothed) value for synthesis
+    // Synthesis Fields (Read by Output, Written by Analysis)
+    bool play;                  // Gate flag
+    uint32_t accumalated_phase; // DDS Phase Accumulator
+    uint32_t increment_j;       // DDS Phase Step
+    int16_t amp;                // Target Amplitude (Q15)
+    float current_amp;          // Smoothed Amplitude (for envelope)
 
-    // --- Analysis State Fields ---
-    float amp_float;            // Previous frame's amp (normalized 0.0-1.0)
-    bool is_peak;               // True if this bin was a local peak
-    int env_phase;              // 1=attack, 0=sustain, -1=decay
-    int stability;              // Counter for how long this peak has been stable
+    // Analysis Fields (Read/Written by Analysis)
+    float amp_float;            // History for jitter filter
+    bool is_peak;               // Debug/Vis flag
+    int env_phase;              // Envelope state
+    int stability;              // Debounce counter
 } FreqData;
 
-// The global array linking analysis to synthesis
-extern FreqData frq_array[FFT_SIZE / 2]; // HOP_SIZE is FFT_SIZE / 2
+// Global Accessors
+extern FreqData frq_array[FFT_SIZE / 2];
 
-
+// DMA Double Buffers
 extern int16_t input_buffer_1[HOP_SIZE];
 extern int16_t input_buffer_2[HOP_SIZE];
 
+// Buffer Pointers (Swapped in ISR)
 extern int16_t* active_adc_dma_buffer;
 extern int16_t* inactive_adc_dma_buffer;
+
 extern int adc_dma_chan;
 extern volatile bool new_data_ready;
 
-void dma_init_setup();
+// --- Function Prototypes ---
 void adc_setup();
-void adc_error_handler(int16_t *sample_ptr);
-static void init_input_buffers();
+void dma_init_setup();
 void dma_isr();
 
 #endif // INPUT_H

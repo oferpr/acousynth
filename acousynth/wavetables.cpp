@@ -1,75 +1,103 @@
+/**
+ * File: wavetables.cpp
+ * Description: Generates base waveforms and handles additive mixing.
+ */
+
 #include "wavetables.hpp"
-#include "macros.hpp"
+#include "macros.hpp" // Ensure WAVETABLE_LEN and TWO_PI are here
 #include <math.h>
 #include <stdio.h>
+#include <string.h>   // for memset
 
-
-WaveTable *sine_wave;
-WaveTable *saw_wave;
-WaveTable *square_wave;
-WaveTable *triangle_wave;
-WaveTable *synth_wave;
-
-// 1. STATIC ALLOCATION: Defines the actual memory here.
+// --- 1. STATIC MEMORY ALLOCATION ---
+// We allocate these in BSS (RAM) to avoid Heap fragmentation.
+// These hold the "Source" data.
 int16_t SINE_TABLE[WAVETABLE_LEN];
-int16_t *current_wave_table = SINE_TABLE; //points to static array
+int16_t SAW_TABLE[WAVETABLE_LEN];
+int16_t SQUARE_TABLE[WAVETABLE_LEN];
+int16_t TRI_TABLE[WAVETABLE_LEN];
 
+// This holds the "Destination" (Mixed) data that the DMA reads.
+int16_t SYNTH_TABLE[WAVETABLE_LEN];
+
+// Pointer exposed to main.cpp
+int16_t *current_wave_table = SINE_TABLE; 
+
+// --- 2. GENERATION LOGIC ---
 void init_wavetables() {
-    printf("[Output] Generating Wavetables...\n");
+    printf("[Wavetables] Generating Base Tables (Len: %d)...\n", WAVETABLE_LEN);
 
     for (int i = 0; i < WAVETABLE_LEN; i++) {
-        // Generate Sine Math
-        float v = sin((TWO_PI * i / WAVETABLE_LEN));
-        SINE_TABLE[i] = (int16_t)(v * 32767.0f);
-        // Sawtooth wave
-        //saw_wave->table[i] = (int16_t)((1 - 2 * ((float)i / WAVETABLE_LEN)) * INT16_MAX); //Ramp from 1 to -1
-        // Square wave
-        //square_wave->table[i] = (i < WAVETABLE_LEN / 2) ? INT16_MAX : INT16_MIN; //True->1, False->-1
-        // Triangle wave
-        //float phase = (float)i / WAVETABLE_LEN;
-        //triangle_wave->table[i] = (int16_t)((2.0f * fabs(2.0f * (phase - 0.5f)) - 1.0f) * INT16_MAX); //Triangle wave: 2.0 * abs(2.0 * (phase - 0.5)) - 1.0
-    }
-    current_wave_table = SINE_TABLE;
-}
+        // A. Sine Wave (Standard)
+        // sin(0..2PI) -> -1.0 to 1.0
+        float v_sine = sinf((float)TWO_PI * i / WAVETABLE_LEN);
+        SINE_TABLE[i] = (int16_t)(v_sine * 32767.0f);
 
+        // B. Sawtooth Wave (Ramp Down)
+        // Goes from 1.0 to -1.0
+        float v_saw = 1.0f - (2.0f * (float)i / (float)WAVETABLE_LEN);
+        SAW_TABLE[i] = (int16_t)(v_saw * 32767.0f);
 
-// Simple switcher (No mixing for now - let's get Sine working first)
-void set_synth_table() {
-    // For now, just enforce Sine to debug the distortion
-    current_wave_table = SINE_TABLE;
-}
-/*
-//[ms]. LATER - READ KNOBS DATA
-// Mixes 3 waves into the 'synth_wave' table
-void set_synth_table(WaveTable *wave1, float vol1, WaveTable *wave2, float vol2, WaveTable *wave3, float vol3) {
-    // If synth_wave was pointing to a static wave (like sine_wave), allocate new memory
-    // If it was already allocated as SYNTH, we can overwrite it.
-    if (synth_wave == sine_wave || synth_wave == NULL) {
-         synth_wave = new WaveTable();
+        // C. Square Wave (50% Duty Cycle)
+        // High for first half, Low for second half
+        if (i < WAVETABLE_LEN / 2) {
+            SQUARE_TABLE[i] = 32767;
+        } else {
+            SQUARE_TABLE[i] = -32767;
+        }
+
+        // D. Triangle Wave
+        // Rises to 1.0, falls to -1.0
+        float phase = (float)i / (float)WAVETABLE_LEN;
+        float v_tri = 0.0f;
+        if (phase < 0.5f) {
+            v_tri = -1.0f + (4.0f * phase); // Rise
+        } else {
+            v_tri = 3.0f - (4.0f * phase);  // Fall
+        }
+        TRI_TABLE[i] = (int16_t)(v_tri * 32767.0f);
     }
     
-    synth_wave->wave = SYNTH;
-    float total_vol = vol1 + vol2 + vol3;
-    if (total_vol == 0.0f) total_vol = 1.0f; // Prevent divide by zero
-
-    for (int i = 0; i < WAVETABLE_LEN; i++) {
-        float mixed_val = (wave1->table[i] * vol1 + wave2->table[i] * vol2 + wave3->table[i] * vol3) / total_vol;
-        synth_wave->table[i] = (int16_t)mixed_val;
-    }
+    // Set default to pure sine to start
+    set_synth_table(1.0f, 0.0f, 0.0f, 0.0f);
 }
-*/
-/*
-void set_synth_table(WaveTable *wave1, float vol1, WaveTable *wave2, float vol2, WaveTable *wave3, float vol3) {
-    synth_wave = new WaveTable();
-    synth_wave->wave = SYNTH;
 
-    for (int i = 0; i < WAVETABLE_LEN; i++) {
-        synth_wave->table[i] = (wave1->table[i] * vol1 + wave2->table[i] * vol2 + wave3->table[i] * vol3) / (vol1 + vol2 + vol3);
+// --- 3. ADDITIVE SYNTHESIS MIXER ---
+// Mixes the 4 base tables into SYNTH_TABLE with normalization.
+void set_synth_table(float w_sine, float w_saw, float w_square, float w_tri) {
+    
+    // 1. Calculate Total Weight for Normalization
+    // We must normalize to prevent clipping (overflowing int16).
+    float total_weight = w_sine + w_saw + w_square + w_tri;
+    
+    // Safety: Prevent divide by zero if user sends all 0.0s
+    if (total_weight < 0.0001f) {
+        total_weight = 1.0f; 
+        // Optional: Could zero out table here, but let's keep logic simple
     }
+
+    float normalization_factor = 1.0f / total_weight;
+
+    // 2. Additive Mixing Loop
+    for (int i = 0; i < WAVETABLE_LEN; i++) {
+        // Weighted Sum (using floats for precision)
+        float mixed_sample = (SINE_TABLE[i]   * w_sine) +
+                             (SAW_TABLE[i]    * w_saw)  +
+                             (SQUARE_TABLE[i] * w_square) +
+                             (TRI_TABLE[i]    * w_tri);
+        
+        // Normalize back to range
+        mixed_sample *= normalization_factor;
+
+        // Store in Destination Table
+        SYNTH_TABLE[i] = (int16_t)mixed_sample;
+    }
+
+    // 3. Point the engine to the new mixed table
+    current_wave_table = SYNTH_TABLE;
 }
-*/
 
 void set_synth_env(int16_t *attack_time, int16_t *release_time) {
-    *attack_time = 30; //[ms]. LATER - READ KNOB DATA
-    *release_time = 100; //[ms]. LATER - READ KNOB DATA
+    *attack_time = 30;   // ms
+    *release_time = 100; // ms
 }

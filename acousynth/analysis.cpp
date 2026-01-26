@@ -2,54 +2,45 @@
 #include "macros.hpp"
 #include "input_config.hpp"
 #include "libs/kissfft/kiss_fftr.h"
-#include <stdio.h> //  for printf
+#include <stdio.h> 
+#include <string.h> // for memset, memmove
 
+// --- Debug Toggle ---
+// Comment this out for production (saves UART time)
+//#define DEBUG_ANALYSIS 
 
-// --- Analysis Parameters ---
-// Define peak-finding sensitivity.
-#define PEAK_THRESHOLD 0.05f
-// Define envelope attack/decay sensitivity.
-#define ENV_THRESHOLD 0.05f
-// How many frames a peak must be stable to be "played".
-#define STABILITY_COUNT 3
-// How many bins to check on either side for peak detection.
+// --- Constants ---
+constexpr float PEAK_THRESHOLD = 0.02f;   // Minimum amplitude to consider
+constexpr float ENV_THRESHOLD  = 0.05f;   // Change detection for Attack/Decay
+constexpr int   STABILITY_COUNT = 3;      // Frames required to lock a note
+constexpr float ADC_BIAS = 2048.0f;       // 12-bit ADC Center
+constexpr float MIN_FREQ_SEP = 4.9f;      // Min Hz separation for guitar notes
+
+// --- Internal State ---
 static int MODES_RESOLUTION;
-
-// --- Buffers & FFT Config ---
-// Internal buffer for 50% overlap processing
 static float processing_buffer[I_BUFFER_SIZE];
-// Pre-calculated Hanning window
 static float hanning_window[I_BUFFER_SIZE];
 
-// KissFFT configuration and buffers
-static kiss_fftr_cfg fft_cfg;           // real FFT config
-static float fft_in_r[I_BUFFER_SIZE];     // input buffer
-static kiss_fft_cpx fft_out_cpx[FFT_SIZE / 2 + 1]; // output is N/2 + 1 complex points
+// KissFFT State
+static kiss_fftr_cfg fft_cfg;           
+static float fft_in_r[I_BUFFER_SIZE];     
+static kiss_fft_cpx fft_out_cpx[FFT_SIZE / 2 + 1]; 
 
+// --- Helper Functions ---
 
-
-/**
- * @brief (Internal) Checks if a frequency bin is a local peak.
- */
 static bool is_peak(float* amps, int k, int num_freqs) {
-    if (k - MODES_RESOLUTION <= 0 || k + MODES_RESOLUTION >= num_freqs - 1) {
-        return false;
-    }
-    if (amps[k] < PEAK_THRESHOLD) {
-        return false;
-    }
+    if (k - MODES_RESOLUTION <= 0 || k + MODES_RESOLUTION >= num_freqs - 1) return false;
+    
+    // 1. Threshold Check
+    if (amps[k] < PEAK_THRESHOLD) return false;
+
+    // 2. Local Maxima Check
     for (int i = 1; i <= MODES_RESOLUTION; i++) {
-        if (amps[k - i] >= amps[k] || amps[k + i] >= amps[k]) {
-            return false;
-        }
+        if (amps[k - i] >= amps[k] || amps[k + i] >= amps[k]) return false;
     }
     return true;
 }
 
-/**
- * @brief
-(Internal) Determines envelope phase (attack, sustain, decay).
- */
 static int get_env_phase(float amp_now, float amp_prev) {
     float diff = amp_now - amp_prev;
     if (diff > ENV_THRESHOLD) return 1;  // Attack
@@ -57,156 +48,102 @@ static int get_env_phase(float amp_now, float amp_prev) {
     return 0; // Sustain
 }
 
-/**
- * @brief Initializes analysis components.
- */
+// --- Public Functions ---
+
 void analysis_init() {
-    // 1. Calculate Hanning window
+    // 1. Pre-calc Window
     for (int i = 0; i < I_BUFFER_SIZE; i++) {
         hanning_window[i] = 0.5f - 0.5f * cosf(2.0f * M_PI * i / (I_BUFFER_SIZE - 1));
     }
 
-    // 2. Clear processing buffer
+    // 2. Clear Buffers
     memset(processing_buffer, 0, sizeof(processing_buffer));
 
-    // 3. Initialize KissFFT
+    // 3. Alloc FFT
     fft_cfg = kiss_fftr_alloc(I_BUFFER_SIZE, 0, NULL, NULL);
 
-    // 4. Calculate mode resolution for peak detection
-    float resolution = (float)FS_I / (float)I_BUFFER_SIZE;
-    MODES_RESOLUTION = (int)(4.9f / resolution); // 4.9 Hz is is the minimal frequency separation for guitar notes
-    //if (MODES_RESOLUTION < 1) MODES_RESOLUTION = 1; // CHECK!!
-    printf("[Analysis] Init Complete. Res: %.2f Hz/bin\n", resolution);
+    // 4. Calc Resolution
+    float bin_width_hz = (float)FS_I / (float)I_BUFFER_SIZE;
+    MODES_RESOLUTION = (int)(MIN_FREQ_SEP / bin_width_hz);
+    if (MODES_RESOLUTION < 1) MODES_RESOLUTION = 1;
 
+    printf("[Analysis] Init. Res: %.2f Hz/bin, Search Radius: %d bins\n", bin_width_hz, MODES_RESOLUTION);
 }
 
-/**
- * @brief Analyzes one audio segment: performs STFT and updates frq_array.
- */
 void analyze_audio_segment(int16_t* new_samples) {
-    printf("Raw ADC: %d\n", new_samples[0]); 
-    //Shift old data (overlap)
-    // Move the second half (HOP_SIZE) to the first half
+    
+    // 1. Sliding Window (Overlap)
+    // Shift old data left
     size_t samples_to_keep = I_BUFFER_SIZE - HOP_SIZE;
-    memmove(processing_buffer, 
-            &processing_buffer[HOP_SIZE], 
-            samples_to_keep * sizeof(float));
+    memmove(processing_buffer, &processing_buffer[HOP_SIZE], samples_to_keep * sizeof(float));
 
-    //Read and normalize new data into the second half
+    // 2. Normalize New Data (Int16 -> Float -1.0 to 1.0)
     for (int i = 0; i < HOP_SIZE; i++) {
-        // Normalize from int16 (-32768 to 32767) to float (-1.0 to 1.0)
-        //processing_buffer[HOP_SIZE + i] = ((float)new_samples[i] - 32767.0f) / 32768.0f;
-        processing_buffer[samples_to_keep + i] = ((float)new_samples[i] - 2048.0f) / 2048.0f;
+        processing_buffer[samples_to_keep + i] = ((float)new_samples[i] - ADC_BIAS) / ADC_BIAS;
     }
 
-    //Apply window and prepare for FFT
+    // 3. Apply Window & Prepare FFT
     for (int i = 0; i < I_BUFFER_SIZE; i++) {
         fft_in_r[i] = processing_buffer[i] * hanning_window[i];
     }
 
-    //Run FFT
+    // 4. Execute FFT
     kiss_fftr(fft_cfg, fft_in_r, fft_out_cpx);
 
-    //Calculate Amplitudes and update frq_array
-    
-    // Temporary array to hold all current amplitudes for peak detection
-    float current_amps[NUM_FREQS]; //fft_out_cpx size is I_BUFFER_SIZE, but we only need first NUM_FREQS (FFT_SIZE/2)
-
-    // First pass: Calculate all amplitudes
+    // 5. Calculate Magnitudes (First Pass)
+    // We need all amplitudes calculated before checking neighbors for peaks
+    float current_amps[NUM_FREQS]; 
     for (int k = 0; k < NUM_FREQS; k++) {
-        float real = fft_out_cpx[k].r;
-        float imag = fft_out_cpx[k].i;
-
-        // Get normalized amplitude (0.0 to 1.0)
-        // (I_BUFFER_SIZE / 2) is the normalization factor for a real signal
-        float new_amp = sqrtf(real * real + imag * imag) / (I_BUFFER_SIZE / 2);
-        current_amps[k] = new_amp;
+        // Normalization: Divide by N/2
+        float norm = (I_BUFFER_SIZE / 2.0f);
+        float mag = sqrtf(fft_out_cpx[k].r * fft_out_cpx[k].r + fft_out_cpx[k].i * fft_out_cpx[k].i) / norm;
+        current_amps[k] = mag;
     }
-    printf("[Analysis] FFT Complete.\n");
 
-    // Second pass: Detect peaks and update the shared `frq_array`
+    // 6. Analysis & State Update (Second Pass)
+    int active_peak_count = 0;
+
     for (int k = 0; k < NUM_FREQS; k++) {
-        FreqData* current_freq = &frq_array[k];
+        FreqData* bin = &frq_array[k]; // Pointer to global state
         float new_amp = current_amps[k];
-        float prev_amp = current_freq->amp_float; // Get last frame's amp
+        float prev_amp = bin->amp_float;
 
-        current_freq->is_peak = is_peak(current_amps, k, NUM_FREQS);
+        // Check Peak Status
+        bin->is_peak = is_peak(current_amps, k, NUM_FREQS);
 
-        if (current_freq->is_peak) {
-            current_freq->env_phase = get_env_phase(new_amp, prev_amp);
-            current_freq->stability++;
-            
-            if (current_freq->stability > STABILITY_COUNT) {
-                current_freq->play = true;
-                // --- RAW VALUE ---
-             float raw_amp = current_amps[k];
+        if (bin->is_peak) {
+            bin->env_phase = get_env_phase(new_amp, prev_amp);
+            bin->stability++;
 
-             // --- JITTER FILTER ---
-             // Instead of using raw_amp directly, average it with the previous frame.
-             // This stops the target from bouncing around wildly.
-             float smoothed_target = (raw_amp * 0.5f) + (current_freq->amp_float * 0.5f);
-             
-             // Update the 'float' history with this smoothed version
-             current_freq->amp_float = smoothed_target;
+            if (bin->stability > STABILITY_COUNT) {
+                bin->play = true;
+                active_peak_count++;
 
-             // Apply boost and set int16 target
-             float boosted_amp = smoothed_target * AMP_CORRECTION_FACTOR;
-             if (boosted_amp > 1.0f) boosted_amp = 1.0f;
-             
-             current_freq->amp = (int16_t)(boosted_amp * 32767.0f);
+                // --- Jitter Filter (Low Pass) ---
+                // Smooths the target amplitude to prevent servo/magnet jitters
+                float smoothed_target = (new_amp * 0.5f) + (prev_amp * 0.5f);
+                bin->amp_float = smoothed_target;
+
+                // Apply Output Gain & Clip
+                float boosted = smoothed_target * AMP_CORRECTION_FACTOR;
+                if (boosted > 1.0f) boosted = 1.0f;
+                
+                bin->amp = (int16_t)(boosted * 32767.0f);
             }
         } else {
-            current_freq->env_phase = 0; // 0 for "None"
-            current_freq->stability = 0;
-            current_freq->play = false;
-            current_freq->amp = 0; // Stop playing this freq
-        }
-
-        // Store current amp for next frame's comparison (raw amp)
-        current_freq->amp_float = new_amp;
-    }
-    printf("[Analysis] FFT Analyzed.\n");
-
-    // --- DEBUG DATA COLLECTION ---
-    int active_peaks = 0;
-    
-    for (int k = 0; k < NUM_FREQS; k++) {
-        FreqData* current_freq = &frq_array[k];
-        float new_amp = current_amps[k];
-        float prev_amp = current_freq->amp_float; 
-
-        current_freq->is_peak = is_peak(current_amps, k, NUM_FREQS);
-
-        if (current_freq->is_peak) {
-            current_freq->env_phase = get_env_phase(new_amp, prev_amp);
-            current_freq->stability++;
-            
-            if (current_freq->stability > STABILITY_COUNT) {
-                current_freq->play = true;
-                current_freq->amp = (int16_t)(new_amp * 32767.0f);
-                active_peaks++; // Count for debug
-            }
-        } else {
-            current_freq->env_phase = 0;
-            current_freq->stability = 0;
-            current_freq->play = false;
-            current_freq->amp = 0; 
-        }
-        current_freq->amp_float = new_amp;
-    }
-
-    // --- DEBUG PRINTOUT ---
-    // Only print if there is something interesting, or periodically
-    if (active_peaks > 0) {
-        printf("\n[Analysis] Peaks Found: %d\n", active_peaks);
-        float bin_res = (float)FS_I / (float)FFT_SIZE;
-        
-        for (int k = 0; k < NUM_FREQS; k++) {
-            if (frq_array[k].play) {
-                // Calculate Hz for display
-                float freq = k * bin_res;
-                printf(" -> Bin %d: %.1f Hz (Amp: %d)\n", k, freq, frq_array[k].amp);
-            }
+            // Decay Logic
+            bin->env_phase = 0;
+            bin->stability = 0;
+            bin->play = false;
+            bin->amp = 0;
+            // Immediate update for history
+             bin->amp_float = new_amp;
         }
     }
+
+    #ifdef DEBUG_ANALYSIS
+    if (active_peak_count > 0) {
+        printf(">> Peaks: %d\n", active_peak_count);
+    }
+    #endif
 }

@@ -1,23 +1,34 @@
 #include "output_config.hpp"
 #include "macros.hpp"
-#include "input_config.hpp"
-#include "analysis.hpp"
+#include "analysis.hpp" // For frq_array access
+#include <string.h>     // For memset
 
-audio_format_t audio_format;
-audio_i2s_config_t i2s_config;
-audio_buffer_format_t output_buffer_format;
-audio_format_t *output_format;
-audio_buffer_pool_t *output_pool;
+// --- Internal Driver State ---
+static audio_format_t audio_format;
+static audio_i2s_config_t i2s_config;
+static audio_buffer_format_t output_buffer_format;
+static audio_buffer_pool_t *output_pool;
+
+// --- 1. Initialization Logic ---
 
 void increment_init() {
-    // 3. Initialize the Frequency Array map
-    float freq_resolution = (float)FS_I / (float)FFT_SIZE; // Frequency resolution of each bin
+    printf("[Synth] Initializing Phase Increments...\n");
     
+    // Frequency resolution of the FFT bins based on Input Sample Rate
+    // Note: FS_I is low (1255 Hz), so bins are very fine (~2.4 Hz).
+    float freq_resolution = (float)FS_I / (float)FFT_SIZE; 
+    
+    // Direct Digital Synthesis (DDS) Constant: 2^32 / Fs_out
+    // Maps a target Hz value to a 32-bit phase step per sample.
+    double dds_factor = two32 / (double)FS_O;
+
     for (int k = 0; k < NUM_FREQS; k++) {
         float freq_hz = k * freq_resolution;
-        double inc = (freq_hz / (double)FS_O) * 4294967296.0; // 2^32 = 4294967296
         
-        frq_array[k].increment_j = (uint32_t)inc;
+        // Calculate phase increment for this specific bin frequency
+        frq_array[k].increment_j = (uint32_t)(freq_hz * dds_factor);
+        
+        // Clear state
         frq_array[k].play = false;
         frq_array[k].accumalated_phase = 0;
         frq_array[k].amp = 0;
@@ -29,71 +40,111 @@ void increment_init() {
     }
 }
 
-void fill_o_buffer(audio_buffer_t *buffer, float Kp = 0.01f) {
-    //initilize output buffer
-    int16_t *samples = (int16_t *) buffer->buffer->bytes; // Pointer to the buffer's sample data
+void set_i2s() {
+    // Define format: 16-bit Stereo @ 44.1kHz
+    audio_format.format = AUDIO_BUFFER_FORMAT_PCM_S16;
+    audio_format.sample_freq = FS_O;
+    audio_format.channel_count = 2;
+
+    // Configure PIO Pins
+    i2s_config.data_pin = I2S_DATA_PIN;
+    i2s_config.clock_pin_base = I2S_CLOCK_PIN_BASE;
+    i2s_config.dma_channel = O_DMA_CHANNEL;
+    i2s_config.pio_sm = PIO_NUM;
+
+    // Initialize Pico Audio Driver
+    const audio_format_t *ret = audio_i2s_setup(&audio_format, &i2s_config);
+    if (!ret) {
+        panic("Pico Audio I2S Setup Failed!");
+    }
+}
+
+void connect_o_buffers() {
+    // Define Buffer Format (S16 Stereo = 4 bytes per sample)
+    output_buffer_format.format = &audio_format;
+    output_buffer_format.sample_stride = 4;
+
+    // Create Pool: 3 buffers of size O_BUFFER_SIZE
+    // 3 buffers allow: [1 Playing] [1 Ready] [1 Being Filled]
+    output_pool = audio_new_producer_pool(&output_buffer_format, 3, O_BUFFER_SIZE);
+
+    if (!audio_i2s_connect(output_pool)) {
+        panic("Failed to connect I2S producer pool");
+    }
+}
+
+// --- 2. Synthesis Engine (The Hot Path) ---
+
+// Internal helper to mix samples
+static void fill_o_buffer(audio_buffer_t *buffer, float Kp) {
+    int16_t *samples = (int16_t *)buffer->buffer->bytes;
     
-    // 1. Temporary 32-bit buffer to prevent overflow during mixing
-    // We use 'static' to avoid re-allocating it every interrupt (faster)
-    // O_BUFFER_SIZE is small (256), so this fits easily in RAM.
+    // High-precision mixing buffer (32-bit to prevent overflow before clipping)
+    // Static allocation avoids stack thrashing
     static int32_t mix_buffer[O_BUFFER_SIZE];
     
-    // Clear the mix buffer
+    // Reset mix buffer
     memset(mix_buffer, 0, buffer->max_sample_count * sizeof(int32_t));
     
-    // Safety check on the new static pointer
+    // Safety: Don't run if wavetable isn't ready
     if (!current_wave_table) return;
 
-    // Outer loop: Iterate through active frequencies - cache-efficient
+    // --- A. Additive Synthesis Loop ---
     for (int j = 0; j < NUM_FREQS; j++) {
-        if (frq_array[j].play || frq_array[j].current_amp > 1.0f) { // RELEASE: We process this frequency if it is meant to play OR if it's still fading out. We stop only when it's effectively silent (< 1.0).
-            uint32_t ap = frq_array[j].accumalated_phase; // Load phase once
-            uint32_t inc = frq_array[j].increment_j;       // Load increment once
-            
-            // If play is false, target is 0 (Fade out). 
-            // If play is true, target is the detected amp.
-            int16_t target_amp = frq_array[j].play ? frq_array[j].amp : 0;
-            float current_amp = frq_array[j].current_amp;
-
-            // Inner loop: Generate all samples for this one frequency
-            for (uint i = 0; i < buffer->max_sample_count; i++) {
-                float error = (float)target_amp - current_amp;
-                current_amp += error * Kp;
-
-                // FIX: SAFETY MASK
-                // We use the mask to ensure the index wraps around correctly.
-                // This prevents reading garbage memory if ap overflows weirdly.
-                uint32_t table_index = (ap >> PHASE_SHIFT) & WAVETABLE_MASK;
-                
-                int16_t table_sample = current_wave_table[table_index];
-
-                // Standard Mix with headroom
-                int32_t product = ((int32_t)table_sample * (int16_t)current_amp) >> 2;
-
-                // Add this frequency's contribution to the sample
-                // This requires clipping at the end
-                mix_buffer[i] += (product >> 15);   // Q15 format adjustment
-
-                ap += inc; // Advance phase
-            }
-            // Store the final phase back
-            frq_array[j].accumalated_phase = ap;
-            frq_array[j].current_amp = current_amp;
+        // Optimization: Skip silent frequencies
+        // We also check 'current_amp > 1.0' to ensure we process the full decay tail
+        if (!frq_array[j].play && frq_array[j].current_amp <= 1.0f) {
+            continue;
         }
+
+        // Load Frequency State
+        uint32_t ap = frq_array[j].accumalated_phase;
+        uint32_t inc = frq_array[j].increment_j;
+        
+        // Envelope Follower Logic
+        // Target is either the live amplitude (if playing) or 0 (if stopped)
+        int16_t target_amp = frq_array[j].play ? frq_array[j].amp : 0;
+        float current_amp = frq_array[j].current_amp;
+
+        // Sample Generation Loop
+        for (uint i = 0; i < buffer->max_sample_count; i++) {
+            // 1. P-Control Envelope Smoothing
+            float error = (float)target_amp - current_amp;
+            current_amp += error * Kp;
+
+            // 2. WaveTable Lookup
+            // Use top bits of phase accumulator for index
+            // With PHASE_SHIFT=22 (32-10), we correctly map 32-bit phase to 1024 table
+            uint32_t table_index = (ap >> PHASE_SHIFT) & WAVETABLE_MASK;
+            int16_t wave_sample = current_wave_table[table_index];
+
+            // 3. Apply Amplitude (Volume)
+            // (Sample * Amp) >> 2 gives us headroom before final mix
+            int32_t product = ((int32_t)wave_sample * (int16_t)current_amp) >> 2;
+
+            // 4. Accumulate into Mix Buffer (Q15 adjustment)
+            mix_buffer[i] += (product >> 15);
+
+            // 5. Advance Phase
+            ap += inc;
+        }
+
+        // Save State for next block
+        frq_array[j].accumalated_phase = ap;
+        frq_array[j].current_amp = current_amp;
     }
     
-    // --- 2. POST PROCESSING (Simple Hard Clamp) ---
-    // We are removing the cubic math to rule it out as the source of "squashed" sound.
+    // --- B. Final Output Stage ---
     for (uint i = 0; i < buffer->max_sample_count; i++) {
         int32_t val = mix_buffer[i];
         
-        // Simple Hard Limiter
+        // Hard Clipper / Limiter
         if (val > 32767) val = 32767;
         else if (val < -32767) val = -32767;
 
         int16_t out_val = (int16_t)val;
 
-        // Write to Stereo
+        // Interleave to Stereo (Left = Right)
         samples[i*2]     = out_val;
         samples[i*2 + 1] = out_val;
     }
@@ -101,57 +152,16 @@ void fill_o_buffer(audio_buffer_t *buffer, float Kp = 0.01f) {
     buffer->sample_count = buffer->max_sample_count;
 }
 
-
-void set_i2s() {
-    // --- Setup I2S Driver ---
-    // define the audio format for output
-    audio_format.format = AUDIO_BUFFER_FORMAT_PCM_S16; //audio format
-    audio_format.sample_freq = FS_O; //out sample rate
-    audio_format.channel_count = 2; //Stereo
-
-    // define  I2S configuration
-    i2s_config.data_pin = I2S_DATA_PIN; // data pin
-    i2s_config.clock_pin_base = I2S_CLOCK_PIN_BASE; //BCK (base clock pin);
-    i2s_config.dma_channel = O_DMA_CHANNEL; // DMA channel 1
-    i2s_config.pio_sm =  PIO_NUM;   // PIO 0, State Machine 0
-
-    // Initialize the I2S driver with our configuration
-    const audio_format_t *output_format = audio_i2s_setup(&audio_format, &i2s_config);
-    if (!output_format) {
-        panic("Pico Audio I2S failed to setup!");
-    }
-}
-
-void connect_o_buffers() {
-    // --- 2. Create and Connect the Producer (Your Synthesizer) ---\
-    //define th buffer's format
-    output_buffer_format.format = &audio_format; //audio format
-    output_buffer_format.sample_stride = 4; //sample stride - no. bytes - For S16 stereo, each sample is 4 bytes (16 bits * 2 channels)
-
-    // The producer pool is where our synthesizer will place the audio buffers it generates.
-    // We'll create a pool of 3 buffers.
-    output_pool = audio_new_producer_pool(&output_buffer_format, 3, O_BUFFER_SIZE);
-
-    // Connect the producer pool to the I2S driver.
-    // The driver will now automatically take buffers from this pool for playback.
-    if (!audio_i2s_connect(output_pool)) {
-        panic("Failed to connect audio producer pool");
-    }
-}
-
 void fetch_o_samples(float Kp) {
-    // Get a free buffer from the producer pool. This will block until one is available.
+    // Request free buffer (Non-blocking mode)
     audio_buffer_t *buffer = take_audio_buffer(output_pool, false);
 
     if (buffer == NULL) {
-        // The audio system is backed up (or broken). 
-        // We return immediately so we don't hang the Analysis loop.
+        // Buffer starvation occurred (CPU too slow or I2S too fast)
         return; 
     }
 
-    // Generate audio data and fill the buffer.
     fill_o_buffer(buffer, Kp);
 
-    // "Give" the filled buffer back to the pool. The I2S driver will now pick it up for DMA transfer.
     give_audio_buffer(output_pool, buffer);
 }
