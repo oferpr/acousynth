@@ -1,5 +1,5 @@
 # acoustic-synth
-# Acousynth Live: Real-Time Electro-Acoustic Feedback Synthesizer
+# Acousynth Live: Real-Time Electro-Acoustic Synthesizer
 
 **Platform:** Raspberry Pi Pico (RP2040) | **Language:** C++
 ## Overview
