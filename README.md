@@ -17,19 +17,12 @@ The project demonstrates the implementation of **deterministic, low-latency sign
 ## System Architecture
 The system follows a strict "Producer-Consumer" pipeline to ensure thread safety and timing stability.
 
-> **[Insert Block Diagram Here]**
-> *Description: The signal flows from the High-Impedance Analog Front End -> ADC -> DMA Buffer -> Core 0 (Analysis) / Core 1 (Synthesis) -> I2S Output -> Class D Amplifier.*
-
 ---
 
 ## Hardware Implementation
 
 ### Analog Front End (AFE)
 To interface the high-impedance Piezo sensors with the RP2040's 12-bit ADC, I designed a custom pre-amplifier circuit.
-* **Challenge:** Piezo disks act as capacitors with high source impedance (>1MΩ), causing signal loss with standard line inputs.
-* **Solution:** Designed a JFET-input Op-Amp buffer (TL072) with a 1st-order Low Pass Filter (fc = 15kHz) to prevent aliasing. Simulated in **LTSpice** for noise performance and frequency response.
-
-> **[Insert Analog Circuit Schematic Here]**
 
 ---
 
