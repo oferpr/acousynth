@@ -23,7 +23,7 @@ The system follows a strict "Producer-Consumer" pipeline to ensure thread safety
 
 ### Analog Front End (AFE)
 To interface the coil sensors with the RP2040's 12-bit ADC, I designed a custom pre-amplifier circuit.
-![Pre-Amp](visuals/Pre-Amp DC Offset Scheme.png)
+![Pre-Amp](visuals/Pre-Amp%20DC%20Offset%20Scheme.png)
 *Pre-Amp Stage Circuit Sketch, output goes to a standart RC LPF Circuit for Anti-Aliasing filtering.*
 
 ---
