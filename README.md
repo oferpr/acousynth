@@ -22,7 +22,9 @@ The system follows a strict "Producer-Consumer" pipeline to ensure thread safety
 ## Hardware Implementation
 
 ### Analog Front End (AFE)
-To interface the high-impedance Piezo sensors with the RP2040's 12-bit ADC, I designed a custom pre-amplifier circuit.
+To interface the coil sensors with the RP2040's 12-bit ADC, I designed a custom pre-amplifier circuit.
+![Pre-Amp Stage Circuit Sketch](Pre-Amp DC Offset Scheme.png)
+*Pre-Amp Stage Circuit Sketch, output goes to a standart RC LPF Circuit for Anti-Aliasing filtering.*
 
 ---
 
