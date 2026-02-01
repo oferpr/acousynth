@@ -10,9 +10,9 @@
 //#define DEBUG_ANALYSIS 
 
 // --- Constants ---
-constexpr float PEAK_THRESHOLD = 0.02f;   // Minimum amplitude to consider
+constexpr float PEAK_THRESHOLD = 0.01f;   // Minimum amplitude to consider
 constexpr float ENV_THRESHOLD  = 0.05f;   // Change detection for Attack/Decay
-constexpr int   STABILITY_COUNT = 3;      // Frames required to lock a note
+constexpr int   STABILITY_COUNT = 2;      // Frames required to lock a note
 constexpr float ADC_BIAS = 2048.0f;       // 12-bit ADC Center
 constexpr float MIN_FREQ_SEP = 4.9f;      // Min Hz separation for guitar notes
 
@@ -36,7 +36,7 @@ static bool is_peak(float* amps, int k, int num_freqs) {
 
     // 2. Local Maxima Check
     for (int i = 1; i <= MODES_RESOLUTION; i++) {
-        if (amps[k - i] >= amps[k] || amps[k + i] >= amps[k]) return false;
+        if (amps[k - i] > amps[k] || amps[k + i] >= amps[k]) return false;
     }
     return true;
 }

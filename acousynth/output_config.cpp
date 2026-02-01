@@ -1,6 +1,7 @@
 #include "output_config.hpp"
 #include "macros.hpp"
 #include "analysis.hpp" // For frq_array access
+#include "wavetables.hpp" // For current_wave_table access
 #include <string.h>     // For memset
 
 // --- Internal Driver State ---
@@ -119,7 +120,7 @@ static void fill_o_buffer(audio_buffer_t *buffer, float Kp) {
             int16_t wave_sample = current_wave_table[table_index];
 
             // 3. Apply Amplitude (Volume)
-            // (Sample * Amp) >> 2 gives us headroom before final mix
+            // (Sample * Amp) >> 4 gives us headroom before final mix
             int32_t product = ((int32_t)wave_sample * (int16_t)current_amp) >> 2;
 
             // 4. Accumulate into Mix Buffer (Q15 adjustment)

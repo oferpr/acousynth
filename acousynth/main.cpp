@@ -23,7 +23,7 @@
 // --- Configuration Constants ---
 constexpr uint STATUS_LED_PIN = 15;
 constexpr uint STARTUP_DELAY_MS = 2000;
-constexpr int  NUM_PRIME_BUFFERS = 4;
+constexpr int  NUM_PRIME_BUFFERS = 2;
 
 // --- Control Loop Parameters ---
 // Kp: Proportional gain for the amplitude envelope follower.
@@ -39,7 +39,7 @@ int main() {
     
     // Initialize Subsystems
     init_wavetables();
-    set_synth_table(0.5f, 0.5f, 0.0f, 0.0f);; // Weights for: Sine, Saw, Square, Triangle
+    set_synth_table(0.0f, 0.0f, 1.0f, 0.0f);; // Weights for: Sine, Saw, Square, Triangle
     increment_init();
     analysis_init();
     

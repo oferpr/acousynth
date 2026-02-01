@@ -16,7 +16,7 @@ const int PHASE_SHIFT = 32 - WAVETABLE_BITS;
 #define TWO_PI 6.28318530718
 #define two32 4294967296.0
 
-#define FS_I 1255
+#define FS_I 2000
 #define HOP_SIZE 64
 #define FFT_SIZE 512
 #define I_BUFFER_SIZE FFT_SIZE

@@ -1,4 +1,5 @@
 #include "input_config.hpp"
+#include "hardware/clocks.h"
 #include <stdio.h>
 
 // --- Global Instance Definitions ---
@@ -37,10 +38,8 @@ void adc_setup() {
     adc_run(false);
 
     // Clock Divider Calculation
-    // NOTE: This assumes System Clock is 48MHz. 
-    // If running at default 125MHz, use: (125000000 / FS_I) - 1
-    // Ideally: (clock_get_hz(clk_adc) / FS_I) - 1
-    float clk_div = (48000000.0f / FS_I) - 1.0f;
+    float clk_hz = (float)clock_get_hz(clk_adc);
+    float clk_div = (clk_hz / FS_I) - 1.0f;
     adc_set_clkdiv(clk_div);
 
     // FIFO Setup
