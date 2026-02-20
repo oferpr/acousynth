@@ -12,7 +12,7 @@
 #include <stdint.h>
 
 // Adjust this to boost quiet signals from the guitar
-#define AMP_CORRECTION_FACTOR 1.5f 
+#define AMP_CORRECTION_FACTOR 1.0f 
 
 /**
  * @brief Initializes the FFT engine, Hanning window, and buffers.

@@ -1,14 +1,10 @@
-/**
- * Project: Acousynth Live (RP2040 Real-Time Electro-Acoustic Synth - Acoustic Guitar Version)
+/*
+ * Project: Acousynth (RP2040 Real-Time Electro-Acoustic Synth - Acoustic Guitar Version)
  * File: main.cpp
  * Author: Ofer Pressman
  * Description: 
  * Core firmware entry point. Manages the high-speed DMA data acquisition 
  * from the ADC, spectral analysis (FFT), and I2S audio output.
- * * Architecture:
- * 1. ADC samples audio via DMA (Double Buffered).
- * 2. Main loop processes audio blocks and updates wavetables based on DDS algorithm.
- * 3. I2S Interface outputs synthesized audio with deterministic latency.
  */
 
 #include "macros.hpp"
@@ -39,7 +35,7 @@ int main() {
     
     // Initialize Subsystems
     init_wavetables();
-    set_synth_table(0.0f, 0.0f, 1.0f, 0.0f);; // Weights for: Sine, Saw, Square, Triangle
+    set_synth_table(0.5, 0.5f, 0.0f, 0.0f);; // Weights for: Sine, Saw, Square, Triangle
     increment_init();
     analysis_init();
     
