@@ -1,11 +1,9 @@
 # acoustic-synth
 # Real-Time Electro-Acoustic Synthesizer
-
-**Platform:** Raspberry Pi Pico (RP2040) | **Language:** C++
 ## Overview
 Acousynth Live is a closed-loop embedded system designed to create self-sustaining acoustic textures. Unlike a traditional synthesizer that runs on a timer, this system listens to the physical vibrations of a string instrument (via Coil pickups), analyzes the spectral content in real-time, and generates a corresponding additive synthesis signal to drive the instrument's body back into resonance.
 
-The project demonstrates the implementation of deterministic, low-latency signal chains on a dual-core microcontroller, combines analog acoustics and digital signal processing.
+Low-latency signal chains on a Raspberry Pi Pico, combines analog acoustics and digital signal processing.
 
 ### Capabilities
 * **Zero-Copy Latency:** Utilizes RP2040 DMA (Direct Memory Access) to move audio data between ADC, RAM, and I2S interfaces without CPU intervention.
@@ -32,6 +30,16 @@ To be updated.
 To interface the coil sensors with the RP2040's 12-bit ADC, I designed a custom pre-amplifier circuit.
 ![Pre-Amp](visuals/Pre-Amp%20DC%20Offset%20Scheme.png)
 *Pre-Amp Stage Circuit Sketch, output goes to a standart RC LPF Circuit for Anti-Aliasing filtering.*
+Components:
+- TL072 Op-Amp
+- Coil Pickup
+
+### Output Chain
+I2S DAC to a transducer speaker 
+Components:
+- PCM5102A I2S DAC
+- LM386 10W Audio Amp
+- Dayton Audio DAEX32QMB-4 Quad Feet Mega Bass 32mm Exciter 40W 4 Ohm
 
 ---
 
