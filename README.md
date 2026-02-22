@@ -1,11 +1,21 @@
 # acoustic-synth
 # Real-Time Electro-Acoustic Synthesizer
 ## Overview
-Acousynth Live is a closed-loop embedded system designed to create self-sustaining acoustic textures. Unlike a traditional synthesizer that runs on a timer, this system listens to the physical vibrations of a string instrument (via Coil pickups), analyzes the spectral content in real-time, and generates a corresponding additive synthesis signal to drive the instrument's body back into resonance.
+Acousynth Live is a closed-loop embedded system designed to create self-sustaining acoustic textures. Unlike a traditional synthesizertimer, this system captures the physical vibrations of a string instrument (via Coil pickup), analyzes the spectral content in real-time, and generates a corresponding additive synthesis signal to drive the instrument's body back into resonance.
+This performed by a low-latency signal chains on a Raspberry Pi Pico, combines analog acoustics and digital signal processing.
 
-Low-latency signal chains on a Raspberry Pi Pico, combines analog acoustics and digital signal processing.
+**Signal Flow Diagram**<br>
+*note that the ANC feature hasn't been implemented yet.
 
-### Capabilities
+<img src="visuals/Diagram.png">
+
+
+
+**Prototype**
+
+<img src="visuals/Acousynth.jpg" width="400">
+
+
 * **Zero-Copy Latency:** Utilizes RP2040 DMA (Direct Memory Access) to move audio data between ADC, RAM, and I2S interfaces without CPU intervention.
 * **Spectral Analysis:** Implements a Windowed FFT to track fundamental frequencies .
 * **Additive Synthesis:** Based on the analysis, re-generates notes played using a custom 32-bit Direct Digital Synthesis (DDS) engine with dynamic harmonic mixing.
@@ -17,25 +27,18 @@ To be updated.
 
 ---
 
----
-
-## System Architecture
-To be updated.
-
----
-
 ## Hardware Implementation
 
 ### Analog Front End
 To interface the coil sensors with the RP2040's 12-bit ADC, I designed a custom pre-amplifier circuit.
 ![Pre-Amp](visuals/Pre-Amp%20DC%20Offset%20Scheme.png)
-*Pre-Amp Stage Circuit Sketch, output goes to a standart RC LPF Circuit for Anti-Aliasing filtering.*
+*Pre-Amp Stage Circuit Sketch, output goes to a standart RC LPF Circuit for Anti-Aliasing filtering.*<br>
 Components:
 - TL072 Op-Amp
 - Coil Pickup
 
 ### Output Chain
-I2S DAC to a transducer speaker 
+I2S DAC to a transducer speaker <br> 
 Components:
 - PCM5102A I2S DAC
 - LM386 10W Audio Amp
